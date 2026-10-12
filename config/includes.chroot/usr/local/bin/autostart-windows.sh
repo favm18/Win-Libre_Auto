@@ -7,6 +7,7 @@ set -euo pipefail
 # - detectar disco interno y copiar si el usuario confirma
 # - importar/arrancar VM y lanzar virt-viewer
 # - instalar Windows desde ISO (crear disco qcow2 y lanzar el instalador)
+# - diagnóstico BIOS automático y opción para exportar logs
 
 LOGFILE="/var/log/autostart-windows.log"
 exec 3>&1
@@ -26,13 +27,15 @@ zen_info() { zenity --info --width=480 --height=200 --text="$1"; }
 zen_error() { zenity --error --width=480 --height=200 --text="$1"; }
 zen_question() { zenity --question --width=480 --height=200 --text="$1"; return $?; }
 zen_list() {
-  zenity --list --radiolist --height=420 --width=640 \
+  zenity --list --radiolist --height=520 --width=700 \
     --title="Windows Libre — Selecciona una acción" \
     --column "" --column "Acción" \
     TRUE "Iniciar Windows (uso SSD si existe, si no USB)" \
     FALSE "Iniciar Windows desde USB (no copiar)" \
     FALSE "Copiar imagen al disco interno (recomendado para rendimiento)" \
     FALSE "Instalar Windows desde ISO (tengo una ISO en la USB)" \
+    FALSE "Diagnóstico BIOS (recomendado si hay problemas)" \
+    FALSE "Exportar diagnóstico (crear ZIP con logs)" \
     FALSE "Ver ayuda / Logs" \
     FALSE "Apagar / Reiniciar" \
     --ok-label="Ir" --cancel-label="Salir"
@@ -41,6 +44,20 @@ zen_list() {
 mkdir -p "$(dirname "$LOGFILE")"
 touch "$LOGFILE" || true
 log "Script iniciado."
+
+# Run bios detection non-interactive and, if problems, run interactive helper
+if command -v /usr/local/bin/bios-helper.sh >/dev/null 2>&1; then
+  # call detect mode
+  detect_out=$(/usr/local/bin/bios-helper.sh --detect 2>/dev/null || true)
+  # parse
+  KVM_OK_MSG=$(echo "$detect_out" | awk -F"=" '/KVM_OK_MSG/ {print $2}' | tr -d '\r' || true)
+  VT_FLAG=$(echo "$detect_out" | awk -F"=" '/VT_FLAG/ {print $2}' | tr -d '\r' || true)
+  # If virtualization not present or KVM not usable, show interactive helper
+  if [ -z "$VT_FLAG" ] || [ "$KVM_OK_MSG" != "si" ]; then
+    # run interactive helper to guide user
+    /usr/local/bin/bios-helper.sh || true
+  fi
+fi
 
 mount_usb_image() {
   mkdir -p "$USB_MOUNT"
@@ -80,14 +97,12 @@ find_usb_image() {
 
 find_iso_images() {
   mount_usb_image
-  # Buscar *.iso en la partición IMAGES
   if [ -d "$USB_MOUNT" ]; then
     find "$USB_MOUNT" -maxdepth 2 -type f -iname "*.iso" 2>/dev/null || true
   fi
 }
 
 select_iso() {
-  # devuelve ruta seleccionada o vacío
   mapfile -t isos < <(find_iso_images)
   if [ ${#isos[@]} -eq 0 ]; then
     echo ""
@@ -97,7 +112,6 @@ select_iso() {
     echo "${isos[0]}"
     return 0
   fi
-  # crear una lista para zenity
   list_args=()
   for i in "${isos[@]}"; do
     list_args+=(FALSE "$i")
@@ -211,13 +225,11 @@ start_vm_and_viewer() {
   return 0
 }
 
-# New: create VM from ISO
 create_vm_from_iso() {
   local iso="$1"
-  local target_dev="$2" # /dev/sdXn or mountpoint
+  local target_dev="$2"
   local target_mount
   if [ -b "$target_dev" ]; then
-    # mount it
     mkdir -p "$INTERNAL_MOUNT_BASE"
     mount "$target_dev" "$INTERNAL_MOUNT_BASE" 2>/dev/null || true
     target_mount="$INTERNAL_MOUNT_BASE"
@@ -227,7 +239,6 @@ create_vm_from_iso() {
   mkdir -p "$target_mount/$INTERNAL_VMS_DIR"
   local disk_path="$target_mount/$INTERNAL_VMS_DIR/${VM_NAME}.qcow2"
 
-  # Ask size
   size_default=60
   size_choice=$(zenity --entry --title="Tamaño del disco" --text="Tamaño del disco QCOW2 en GB (por defecto $size_default):" --entry-text="$size_default") || true
   if [ -z "$size_choice" ]; then
@@ -235,14 +246,12 @@ create_vm_from_iso() {
   fi
 
   log "Creando disco qcow2: $disk_path size=${size_choice}G"
-  # Create disk using qemu-img if not exists
   if [ ! -f "$disk_path" ]; then
     qemu-img create -f qcow2 "$disk_path" "${size_choice}G" || { zen_error "No se pudo crear el disco"; return 1; }
   fi
   chown root:root "$disk_path" || true
   chmod 600 "$disk_path" || true
 
-  # Check for virtio drivers in IMAGES
   virtio_iso=""
   if [ -d "$USB_MOUNT" ]; then
     if [ -f "$USB_MOUNT/virtio-win.iso" ]; then
@@ -250,12 +259,10 @@ create_vm_from_iso() {
     fi
   fi
 
-  # Build virt-install command
   cmd=(virt-install --name "$VM_NAME" --memory "$RAM_MB" --vcpus "$VCPUS" --cpu host-passthrough \
     --disk path="$disk_path",format=qcow2,bus=virtio \
     --os-variant=win10 --network network=default,model=virtio --video=virtio)
 
-  # attach CDROM(s)
   cmd+=(--cdrom "$iso")
   if [ -n "$virtio_iso" ]; then
     cmd+=(--disk "path=$virtio_iso,device=cdrom,readonly=on")
@@ -271,6 +278,10 @@ create_vm_from_iso() {
   return 0
 }
 
+export_diagnostics() {
+  /usr/local/bin/export-diagnostics.sh || true
+}
+
 show_logs() {
   if [ -f "$LOGFILE" ]; then
     zenity --text-info --width=800 --height=600 --filename="$LOGFILE" --title="Logs de autostart"
@@ -279,6 +290,7 @@ show_logs() {
   fi
 }
 
+# Main menu
 ACTION=$(zen_list) || { log "Usuario canceló menú"; exit 0; }
 log "Acción seleccionada: $ACTION"
 
@@ -358,32 +370,34 @@ case "$ACTION" in
     ;;
 
   "Instalar Windows desde ISO (tengo una ISO en la USB)")
-    # seleccionar ISO
     iso_sel=$(select_iso) || iso_sel=""
     if [ -z "$iso_sel" ]; then
       zen_error "No se encontró ninguna ISO en la partición IMAGES. Asegúrate de que la ISO esté copiada y etiquetada en IMAGES."
       exit 0
     fi
-    # elegir destino: interno preferido
     if dev=$(find_internal_device); then
-      # preguntar si usar interno
       if zen_question --text="Se detectó un disco interno con espacio. ¿Deseas crear la VM e instalar en el disco interno?"; then
-        # crear VM en interno
         if create_vm_from_iso "$iso_sel" "$dev"; then
           zen_info "Instalador lanzado. Sigue la instalación dentro de la ventana de la VM." || true
         fi
       else
-        # usar USB
         if create_vm_from_iso "$iso_sel" "$USB_MOUNT"; then
           zen_info "Instalador lanzado desde USB. Sigue la instalación dentro de la VM." || true
         fi
       fi
     else
-      # solo USB disponible
       if create_vm_from_iso "$iso_sel" "$USB_MOUNT"; then
         zen_info "Instalador lanzado desde USB. Sigue la instalación dentro de la VM." || true
       fi
     fi
+    ;;
+
+  "Diagnóstico BIOS (recomendado si hay problemas)")
+    /usr/local/bin/bios-helper.sh || true
+    ;;
+
+  "Exportar diagnóstico (crear ZIP con logs)")
+    export_diagnostics
     ;;
 
   "Ver ayuda / Logs")

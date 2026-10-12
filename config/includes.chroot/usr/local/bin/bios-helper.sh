@@ -53,7 +53,7 @@ if systemctl is-active --quiet libvirtd 2>/dev/null; then
   LIBVIRT_ACTIVE="si"
 fi
 
-# Prepare messages
+# Prepare summary
 SUMMARY="Fabricante: $SYSVENDOR\nModelo: $MODEL\nUEFI: $UEFI\nSecureBoot: $SB_STATE\nVirtualization flags: ${VT_FLAG:-none}\nKVM usable: $KVM_OK_MSG\nlibvirtd activo: $LIBVIRT_ACTIVE"
 
 # Guide links per vendor (generic search fallback)
@@ -74,24 +74,39 @@ for k in "${!VENDOR_URLS[@]}"; do
   fi
 done
 
-# Steps to show user (simple and non-technical)
+# Simple steps
 STEPS="Pasos rápidos (guía general):\n\n1) Reinicia el equipo y entra en la BIOS/UEFI pulsando la tecla indicada por el fabricante (F2, F10, F12, Del o Esc).\n2) Busca una sección llamada 'Advanced', 'System Configuration' o 'Security'.\n3) Activa opciones llamadas 'Intel Virtualization Technology', 'VT-x', 'SVM' o 'Virtualization'.\n4) Comprueba la opción 'Secure Boot' y desactívala si da problemas con drivers no firmados.\n5) Guarda los cambios y reinicia.\n\nSi no sabes qué tecla usar para entrar en BIOS, prueba F2, Del, Esc o F12 al arrancar."
 
-# Offer detailed vendor-specific hints (very short)
+# Vendor hints
 VENDOR_HINTS=""
 if echo "$SYSVENDOR" | grep -i "Dell" >/dev/null 2>&1; then
   VENDOR_HINTS="Dell suele usar F2 para acceder a BIOS y F12 para disco/boot menu. Busca 'Virtualization' en 'System Configuration'."
 elif echo "$SYSVENDOR" | grep -i "Lenovo" >/dev/null 2>&1; then
   VENDOR_HINTS="Lenovo ThinkPad/IdeaPad: generalmente F1 o F2. Puede tener 'Security' > 'Virtualization'."
 elif echo "$SYSVENDOR" | grep -i "HP" >/dev/null 2>&1; then
-  VENDOR_HINTS="HP: F10 o Esc al arranque. Virtualization está en 'System Configuration' o 'Security'."
+  VENDOR_HINTS="HP: F10 o Esc al arranque. Virtualization suele estar en 'System Configuration' o 'Security'."
 elif echo "$SYSVENDOR" | grep -i "Acer" >/dev/null 2>&1; then
   VENDOR_HINTS="Acer: F2 para BIOS. Virtualization a menudo en 'Main' o 'Advanced'."
 elif echo "$SYSVENDOR" | grep -i "ASUS" >/dev/null 2>&1; then
   VENDOR_HINTS="ASUS: Suelen usar Del o F2. Busca 'Advanced' > 'CPU Configuration' > 'Intel Virtualization Technology'."
 fi
 
-# Show summary and options to user via zenity
+# Detect-only mode for scripts
+if [ "${1-}" = "--detect" ]; then
+  # Output key=value lines for easy parsing
+  cat <<EOF
+SYSVENDOR=$SYSVENDOR
+MODEL=$MODEL
+UEFI=$UEFI
+SB_STATE=$SB_STATE
+VT_FLAG=${VT_FLAG:-}
+KVM_OK_MSG=$KVM_OK_MSG
+LIBVIRT_ACTIVE=$LIBVIRT_ACTIVE
+EOF
+  exit 0
+fi
+
+# Interactive mode with zenity
 if command -v zenity >/dev/null 2>&1; then
   zenity --question --width=720 --height=320 --text="Estado del sistema:\n\n$SUMMARY\n\n¿Quieres abrir la página de soporte del fabricante o ver pasos para activar Virtualization?" --ok-label="Abrir guía" --cancel-label="Ver pasos";
   choice=$?
@@ -100,15 +115,12 @@ if command -v zenity >/dev/null 2>&1; then
     xdg-open "$OPEN_URL" 2>/dev/null || true
     exit 0
   else
-    # show steps and vendor hints
     zenity --info --width=720 --height=420 --text="$STEPS\n\n$VENDOR_HINTS" --ok-label="Entendido" || true
   fi
 
-  # Offer advanced actions
-  zenity --question --width=720 --height=240 --text="¿Quieres ejecutar comprobaciones adicionales (kvm-ok, status libvirt) y ver instrucciones avanzadas?" --ok-label="Si" --cancel-label="No"
+  zenity --question --width=720 --height=240 --text="¿Quieres ejecutar comprobaciones adicionales (kvm-ok, estado de libvirt) y ver instrucciones avanzadas?" --ok-label="Si" --cancel-label="No"
   adv=$?
   if [ "$adv" -eq 0 ]; then
-    # run checks and show results
     out=""
     out+="\n== Comprobaciones ==\n"
     out+="KVM flags: ${VT_FLAG:-none}\n"
