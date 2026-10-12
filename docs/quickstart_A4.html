@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Win-Libre_Auto — Quickstart A4</title>
+  <style>
+    @page { size: A4; margin: 20mm; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #222; line-height: 1.4; }
+    .container { width: 100%; max-width: 800px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 10px; }
+    h1 { font-size: 22px; margin: 6px 0; }
+    h2 { font-size: 16px; margin: 10px 0 6px; }
+    p { margin: 6px 0; }
+    .box { border: 1px solid #ccc; padding: 12px; border-radius: 6px; background: #fafafa; }
+    ul { margin: 6px 0 12px 18px; }
+    .checklist { display:flex; gap:12px; margin-top:8px; }
+    .check { flex:1; padding:8px; border-radius:6px; background:#fff; border:1px solid #ddd; }
+    .footer { text-align:center; margin-top:18px; font-size:14px; }
+    .stamp { margin-top:14px; border-radius:6px; padding:10px; background:#0b6; color:#fff; display:inline-block; }
+    .small { font-size:12px; color:#444 }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Win-Libre_Auto — Guía rápida (A4) </h1>
+      <p class="small"><strong>ANTES DE INSTALAR, POR FAVOR LEER ESTOS PASOS</strong></p>
+    </header>
+
+    <section class="box">
+      <h2>Resumen</h2>
+      <p>Conecta el USB, arranca desde él, sigue las instrucciones en pantalla y pulsa "Iniciar Windows". Si el asistente pide activar una opción en la BIOS te guiará paso a paso.</p>
+
+      <h2>Antes de empezar (sí o sí)</h2>
+      <ul>
+        <li>Haz copia de seguridad de tus archivos importantes.</li>
+        <li>PC: mínimo 8 GB RAM (16 GB recomendado).</li>
+        <li>Usa puerto USB 3.0 o disco SSD externo para mejor rendimiento.</li>
+        <li>Ten a mano la ISO/imagen de Windows o la .qcow2.</li>
+      </ul>
+
+      <h2>Preparar el USB (en un PC que funcione)</h2>
+      <ol>
+        <li>Genera la ISO con <code>./build.sh</code> en tu PC.</li>
+        <li>Graba la ISO (BORRA el pendrive): <code>sudo dd if=win-live-trixie.iso of=/dev/sdX bs=4M status=progress conv=fsync</code></li>
+        <li>Crea y etiqueta la segunda partición: <code>sudo mkfs.ext4 -L IMAGES /dev/sdX2</code></li>
+        <li>Copiar la imagen: <code>sudo cp /ruta/windows10_ltsc_master.qcow2 /mnt</code> (o la ISO)</li>
+      </ol>
+
+      <h2>En el equipo destino</h2>
+      <ul>
+        <li>Arranca desde el USB (F12 / Esc / F2 al inicio).</li>
+        <li>Si dudas, elige <strong>Diagnóstico BIOS</strong> y sigue las instrucciones.</li>
+        <li>Opciones: Iniciar Windows | Instalar desde ISO | Copiar imagen al disco interno.</li>
+        <li>Si te pide activar "Virtualization" (VT-x/AMD-V), sigue la guía que aparece.</li>
+      </ul>
+
+      <h2>Si algo falla</h2>
+      <p>Selecciona <strong>Exportar diagnóstico</strong> en el menú; te dará un archivo .tar.gz con logs para adjuntar en un issue en GitHub.</p>
+
+    </section>
+
+    <div class="checklist">
+      <div class="check">
+        <strong>Checklist rápido</strong>
+        <ul>
+          <li>&#9744; Hice copia de seguridad</li>
+          <li>&#9744; PC con ≥ 8 GB RAM</li>
+          <li>&#9744; USB 3.0 o SSD</li>
+          <li>&#9744; Imagen/ISO copiada en IMAGES</li>
+        </ul>
+      </div>
+      <div class="check">
+        <strong>WhatsApp rápido</strong>
+        <p>"Lee el Quickstart, arranca desde el USB, selecciona Diagnóstico si dudas, y luego Iniciar Windows. Si algo falla, exporta diagnóstico y súbelo al issue."</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="stamp">¡Felicidades, ya eres hacker! 🎉</div>
+      <p class="small">Repo y soporte: <a href="https://github.com/favm18/Win-Libre_Auto">GitHub/Win-Libre_Auto</a></p>
+    </div>
+
+  </div>
+</body>
+</html>
